@@ -12,11 +12,16 @@ class RegisterTests(APITestCase):
             "password": "securepassword",
             "confirmed_password": "securepassword"
         }
-    
+
     def test_register(self):
         response = self.client.post(self.url, self.data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         user = User.objects.get(email="user@example.com")
+
         self.assertEqual(user.email, "user@example.com")
+        self.assertTrue(user.check_password("securepassword"))
+
+        # Checks if Account is inactive
+        self.assertFalse(user.is_active)
