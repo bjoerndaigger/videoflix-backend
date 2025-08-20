@@ -1,6 +1,6 @@
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
-from .serializers import RegisterSerializer
+from .serializers import RegisterSerializer, LoginSerializer
 from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth.tokens import default_token_generator
@@ -8,13 +8,17 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from django.core.mail import send_mail, BadHeaderError
 from django.conf import settings
-from django.contrib.auth.models import User
+# from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model # Use the current User Model and not the Standard Model
 from rest_framework.exceptions import ValidationError
+from rest_framework_simplejwt.views import TokenObtainPairView
+
+User = get_user_model()
 
 
 def send_confirmation_mail(saved_account, activation_link):
-    subject = "Confirm your email"
-    message = f"Hey {saved_account.username}, please activate your account here: {activation_link}"
+    subject = 'Confirm your email'
+    message = f'Hey {saved_account.username}, please activate your account here: {activation_link}'
     from_email = settings.DEFAULT_FROM_EMAIL
     recipient = saved_account.email
 
@@ -28,9 +32,9 @@ def send_confirmation_mail(saved_account, activation_link):
             )
         except BadHeaderError:
             # Raise error here; view will handle the response
-            raise ValueError("Invalid header found.")
+            raise ValueError('Invalid header found.')
     else:
-        raise ValueError("Make sure all fields are entered and valid.")
+        raise ValueError('Make sure all fields are entered and valid.')
 
 
 class RegisterView(APIView):
@@ -53,13 +57,13 @@ class RegisterView(APIView):
             # activation_link = f"http://localhost:5500/api/activate/{uid}/{token}/"
 
             # Activation link pointing to the backend API for testing (no frontend yet)
-            activation_link = f"http://localhost:8000/api/activate/{uid}/{token}/"
+            activation_link = f'http://localhost:8000/api/activate/{uid}/{token}/'
 
             try:
                 # Send a confirmation email with the activation link
                 send_confirmation_mail(saved_account, activation_link)
             except ValueError as error:
-                return Response({"error": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'error': str(error)}, status=status.HTTP_400_BAD_REQUEST)
 
             # Build the response data to return to the client
             data = {
@@ -84,13 +88,64 @@ class ActivateAccountView(APIView):
             uid = force_str(urlsafe_base64_decode(uidb64))
             user = User.objects.get(pk=uid)
         except (TypeError, ValueError, User.DoesNotExist):
-            raise ValidationError("Invalid or expired activation link.")
+            raise ValidationError('Invalid or expired activation link.')
 
         # Verify the token with check_token
         if user is not None and default_token_generator.check_token(user, token):
             # Activate the user account
             user.is_active = True
             user.save()
-            return Response({"message": "Account successfully activated."}, status=status.HTTP_200_OK)
+            return Response({'message': 'Account successfully activated.'}, status=status.HTTP_200_OK)
         else:
-            return Response({"error": "Invalid link."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Invalid link.'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class LoginView(TokenObtainPairView):
+    serializer_class = LoginSerializer
+
+    def post(self, request, *args, **kwargs):
+        # Initialize the serializer with the incoming request data (email & password)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # Extract the JWT tokens from the validated data
+        refresh = serializer.validated_data["refresh"]
+        access = serializer.validated_data["access"]
+
+        user = User.objects.get(email=request.data["email"])
+        response = Response({
+            'detail': 'Login succesful',
+            'user': {
+                'id': user.pk,
+                'email': user.email,
+            },
+        }, status=status.HTTP_200_OK)
+
+        # Set the access token as an HttpOnly cookie
+        response.set_cookie(
+            key='access_token',
+            value=access,
+            httponly=True,
+            secure=True,
+            samesite='Lax'
+        )
+
+        # Set the refresh token as an HttpOnly cookie
+        response.set_cookie(
+            key='refresh_token',
+            value=refresh,
+            httponly=True,
+            secure=True,
+            samesite='Lax'
+        )
+
+        return response
+
+
+# Protected test endpoint to verify JWT authentication
+class TestProtectedView(APIView):
+    def get(self, request):
+        return Response({
+            "detail": "Access granted",
+            "user": request.user.email
+        })
