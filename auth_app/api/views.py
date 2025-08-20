@@ -106,7 +106,13 @@ class LoginView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
         # Initialize the serializer with the incoming request data (email & password)
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        try:
+            serializer.is_valid(raise_exception=True)
+        except ValidationError:
+            return Response(
+                {'detail': 'Invalid credentials'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
 
         # Extract the JWT tokens from the validated data
         refresh = serializer.validated_data["refresh"]
@@ -146,6 +152,6 @@ class LoginView(TokenObtainPairView):
 class TestProtectedView(APIView):
     def get(self, request):
         return Response({
-            "detail": "Access granted",
-            "user": request.user.email
+            'detail': 'Access granted',
+            'user': request.user.email
         })
