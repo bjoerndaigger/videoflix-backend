@@ -1,6 +1,5 @@
 from rest_framework import serializers
-# from django.contrib.auth.models import User
-from django.contrib.auth import get_user_model # Use the current User Model and not the Standard Model
+from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 User = get_user_model()
@@ -75,7 +74,7 @@ class LoginSerializer(TokenObtainPairSerializer):
         # Check if the provided password matches the stored password
         if not user.check_password(password):
             raise serializers.ValidationError('Invalid email or password')
-        
+
        # Re-add 'username' for the parent serializer, which needs it to authenticate and create JWT tokens
         attrs['username'] = user.username
 

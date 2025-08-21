@@ -2,8 +2,9 @@ from rest_framework.test import APITestCase
 from django.urls import reverse
 from rest_framework import status
 from django.contrib.auth.models import User
-# from django.contrib.auth.models import User
-from django.contrib.auth import get_user_model # Use the current User Model and not the Standard Model
+from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
 User = get_user_model()
 
@@ -72,3 +73,45 @@ class LoginTests(APITestCase):
         }
         response = self.client.post(self.url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class LogoutTests(APITestCase):
+    def setUp(self):
+        self.url = reverse('logout')
+        self.user = User.objects.create_user(
+            username="user@example.com",
+            email='user@example.com',
+            password='securepassword',
+        )
+
+        self.refresh = RefreshToken.for_user(self.user)
+
+    def test_logout(self):
+        # Set the refresh token in the cookie so the view can read it
+        self.client.cookies['refresh_token'] = str(self.refresh)
+
+        # Send POST request to the logout view (no body needed)
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Check that the response includes a cookie header
+        self.assertIn('refresh_token', response.cookies)
+        # Retrieve the cookie from the response
+        cookie = response.cookies['refresh_token']
+        # Check that the cookie value is cleared (set to an empty string)
+        self.assertEqual(cookie.value, '')
+        # Check that the cookie is marked for deletion ((max-age=0))
+        self.assertEqual(cookie['max-age'], 0)
+
+        # Find the OutstandingToken for the refresh token
+        outstanding_token = OutstandingToken.objects.get(token=str(self.refresh))
+        # Checks if the OutstandingToken exists in the blacklist
+        self.assertTrue(BlacklistedToken.objects.filter(token=outstanding_token).exists())
+
+    def test_logout_no_token(self):
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+    
+ 
+
+

@@ -8,10 +8,10 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from django.core.mail import send_mail, BadHeaderError
 from django.conf import settings
-# from django.contrib.auth.models import User
-from django.contrib.auth import get_user_model # Use the current User Model and not the Standard Model
+from django.contrib.auth import get_user_model
 from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.tokens import RefreshToken
 
 User = get_user_model()
 
@@ -146,6 +146,34 @@ class LoginView(TokenObtainPairView):
         )
 
         return response
+
+
+class LogoutView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        # Retrieve the refresh token from the HttpOnly cookie
+        refresh_token = request.COOKIES.get('refresh_token')
+
+        if not refresh_token:
+            return Response(
+                {'error': 'No refresh token found in cookies. User may already be logged out.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            # Create a RefreshToken object from the token string
+            token = RefreshToken(refresh_token)
+
+            # Blacklist the refresh token so it cannot be used again
+            token.blacklist()
+
+            response = Response(
+                {'detail': 'Logout successful! All tokens will be deleted. Refresh token is now invalid.'}, status=status.HTTP_200_OK)
+
+            # Delete the access and refresh token cookies to remove them from the client
+            response.delete_cookie('access_token')
+            response.delete_cookie('refresh_token')
+            return response
+        except Exception as error:
+            return Response({'error': str(error)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 # Protected test endpoint to verify JWT authentication
