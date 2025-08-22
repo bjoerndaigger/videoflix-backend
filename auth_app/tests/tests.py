@@ -134,10 +134,37 @@ class LogoutTests(APITestCase):
         self.assertEqual(cookie['max-age'], 0)
 
         # Find the OutstandingToken for the refresh token
-        outstanding_token = OutstandingToken.objects.get(token=str(self.refresh))
+        outstanding_token = OutstandingToken.objects.get(
+            token=str(self.refresh))
         # Checks if the OutstandingToken exists in the blacklist
-        self.assertTrue(BlacklistedToken.objects.filter(token=outstanding_token).exists())
+        self.assertTrue(BlacklistedToken.objects.filter(
+            token=outstanding_token).exists())
 
     def test_logout_no_token(self):
         response = self.client.post(self.url)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    class RequestPasswordResetTests(APITestCase):
+        def setUp(self):
+            self.url = reverse('password_reset')
+            self.user = User.objects.create_user(
+                username='user@example.com',
+                email='user@example.com',
+                password='securepassword',
+            )
+
+        def test_request_password(self):
+            data = {
+                "email": "user@example.com",
+            }
+
+            response = self.client.post(self.url, data, format='json')
+            self.assertIn('detail', response.data)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        def test_request_password_email_not_exist(self):
+            data = {
+                "email": "usernotexist@notexist.com",
+            }
+            response = self.client.post(self.url, data, format='json')
+            self.assertEqual(response.status_code, status.HTTP_200_OK)

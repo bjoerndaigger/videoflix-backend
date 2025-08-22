@@ -1,6 +1,6 @@
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
-from .serializers import RegisterSerializer, LoginSerializer
+from .serializers import RegisterSerializer, LoginSerializer, ResetPasswordRequestSerializer
 from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth.tokens import default_token_generator
@@ -212,6 +212,58 @@ class LogoutView(APIView):
             return response
         except Exception as error:
             return Response({'error': str(error)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+def send_reset_password_mail(user, reset_link):
+    subject = 'Reset your password'
+    message = f'Hey {user.username}, please reset your password here: {reset_link}'
+    from_email = settings.DEFAULT_FROM_EMAIL
+    recipient = user.email
+
+    if subject and message and from_email:
+        try:
+            send_mail(
+                subject,
+                message,
+                from_email,
+                [recipient],
+            )
+        except BadHeaderError:
+            raise ValueError('Invalid header found.')
+    else:
+        raise ValueError('Make sure all fields are entered and valid.')
+
+
+class RequestPasswordResetView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = ResetPasswordRequestSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+
+            try:
+                user = User.objects.get(email=email)
+                token = default_token_generator.make_token(user)
+                uid = urlsafe_base64_encode(force_bytes(user.pk))
+
+                # reset_link = f"http://localhost:5500/api/password_confirm/{uid}/{token}/"
+
+                # Reset link pointing to the backend API for testing (no frontend yet)
+                reset_link = f'http://localhost:8000/api/password_confirm/{uid}/{token}/'
+                try:
+                    send_reset_password_mail(user, reset_link)
+                except ValueError as error:
+                    return Response({'error': str(error)}, status=status.HTTP_400_BAD_REQUEST)
+
+            except User.DoesNotExist:
+                # Do nothing if the user doesn't exist to avoid revealing account info
+                pass
+
+            # Always return 200 OK for security reasons
+            return Response(
+                {'detail': 'An email has been sent to reset your password.'}, status=status.HTTP_200_OK
+            )
 
 
 # Protected test endpoint to verify JWT authentication

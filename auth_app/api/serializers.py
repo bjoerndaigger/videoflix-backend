@@ -82,3 +82,7 @@ class LoginSerializer(TokenObtainPairSerializer):
         data = super().validate(attrs)
 
         return data
+
+
+class ResetPasswordRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
