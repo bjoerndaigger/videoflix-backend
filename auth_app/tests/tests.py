@@ -75,6 +75,36 @@ class LoginTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
+class CookieRefreshTests(APITestCase):
+    def setUp(self):
+        self.url = reverse('token_refresh')
+        self.user = User.objects.create_user(
+            username="user@example.com",
+            email='user@example.com',
+            password='securepassword',
+        )
+        # Creates a JTW refresh token for the current user
+        self.refresh = RefreshToken.for_user(self.user)
+
+    def test_cookie_refresh_no_token(self):
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_cookie_refresh_invalid_token(self):
+        # Set an invalid refresh token in the cookie so the view can read it
+        self.client.cookies['refresh_token'] = 'this_is_an_invalid_token'
+        # Send POST request to the CookieRefreshView
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_cookie_refresh_with_token(self):
+        self.client.cookies['refresh_token'] = str(self.refresh)
+        response = self.client.post(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('access_token', response.cookies)
+
+
 class LogoutTests(APITestCase):
     def setUp(self):
         self.url = reverse('logout')
@@ -111,7 +141,3 @@ class LogoutTests(APITestCase):
     def test_logout_no_token(self):
         response = self.client.post(self.url)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-    
- 
-
-

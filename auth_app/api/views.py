@@ -10,7 +10,7 @@ from django.core.mail import send_mail, BadHeaderError
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework.exceptions import ValidationError
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 User = get_user_model()
@@ -140,6 +140,44 @@ class LoginView(TokenObtainPairView):
         response.set_cookie(
             key='refresh_token',
             value=refresh,
+            httponly=True,
+            secure=True,
+            samesite='Lax'
+        )
+
+        return response
+
+
+class CookieRefreshView(TokenRefreshView):
+    def post(self, request, *args, **kwargs):
+        refresh_token = request.COOKIES.get('refresh_token')
+
+        if refresh_token is None:
+            return Response({'detail': 'Refresh token not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create a serializer instance with the refresh token
+        # Standard serializer from TokenRefreshView (TokenRefreshSerializer from SimpleJWT)
+        serializer = self.get_serializer(data={'refresh': refresh_token})
+
+        # Validate the token – stops the function if the token is invalid or expired
+        try:
+            serializer.is_valid(raise_exception=True)
+        except Exception:
+            return Response({'detail': 'Refresh token invalid'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Get a new access token
+        new_access_token = serializer.validated_data.get('access')
+
+        # Erstelle eine neue Response
+        response = Response({
+            'detail': 'Token refreshed',
+            'access': new_access_token
+        }, status=status.HTTP_200_OK)
+
+        # Set the new access token as an HttpOnly cookie
+        response.set_cookie(
+            key='access_token',
+            value=new_access_token,
             httponly=True,
             secure=True,
             samesite='Lax'
