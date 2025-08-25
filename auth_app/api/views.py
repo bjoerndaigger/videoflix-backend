@@ -1,6 +1,6 @@
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
-from .serializers import RegisterSerializer, LoginSerializer, ResetPasswordRequestSerializer
+from .serializers import RegisterSerializer, LoginSerializer, ResetPasswordRequestSerializer, PasswordConfirmSerializer
 from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth.tokens import default_token_generator
@@ -107,6 +107,7 @@ class LoginView(TokenObtainPairView):
         # Initialize the serializer with the incoming request data (email & password)
         serializer = self.get_serializer(data=request.data)
         try:
+            # Automatically returns errors if validation fails
             serializer.is_valid(raise_exception=True)
         except ValidationError:
             return Response(
@@ -264,6 +265,28 @@ class RequestPasswordResetView(APIView):
             return Response(
                 {'detail': 'An email has been sent to reset your password.'}, status=status.HTTP_200_OK
             )
+
+
+class PasswordConfirmView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, uidb64, token):
+        try:
+            uid = force_str(urlsafe_base64_decode(uidb64))
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, User.DoesNotExist):
+            raise ValidationError('Invalid or expired activation link.')
+
+        serializer = PasswordConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        if user is not None and default_token_generator.check_token(user, token):
+            new_password = serializer.validated_data['new_password']
+            user.set_password(new_password)
+            user.save()
+            return Response({'detail': 'Your Password has been successfully reset.'}, status=status.HTTP_200_OK)
+        else:
+            return Response({'error': 'Invalid or expired link.'}, status=status.HTTP_400_BAD_REQUEST)
 
 
 # Protected test endpoint to verify JWT authentication

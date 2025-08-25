@@ -168,3 +168,33 @@ class LogoutTests(APITestCase):
             }
             response = self.client.post(self.url, data, format='json')
             self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    class PasswordConfirmTests(APITestCase):
+        def setUp(self):
+            self.url = reverse('password_confirm')
+            self.user = User.objects.create_user(
+                username='user@example.com',
+                email='user@example.com',
+                password='securepassword'
+            )
+
+        def test_password_confirm(self):
+            data = {
+                "new_password": "reallysecurepassword",
+                "confirm_password": "reallysecurepassword"
+            }
+
+            response = self.client.post(self.url, data, format='json')
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            # Check if the password was actually set
+            self.user.refresh_from_db()
+            self.assertTrue(self.user.check_password('reallysecurepassword'))
+
+        def test_password_missmatch(self):
+            data = {
+                "new_password": "secure",
+                "confirm_password": "password"
+            }
+
+            response = self.client.post(self.url, data, format='json')
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
