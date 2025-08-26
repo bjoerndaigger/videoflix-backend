@@ -54,10 +54,10 @@ class RegisterView(APIView):
             # Encode the user's ID into a URL-safe string for the activation link
             uid = urlsafe_base64_encode(force_bytes(saved_account.pk))
 
-            # activation_link = f"http://localhost:5500/api/activate/{uid}/{token}/"
+            activation_link = f"http://localhost:5500/pages/auth/activate.html?uid={uid}&token={token}"
 
             # Activation link pointing to the backend API for testing (no frontend yet)
-            activation_link = f'http://localhost:8000/api/activate/{uid}/{token}/'
+            # activation_link = f'http://localhost:8000/api/activate/{uid}/{token}/'
 
             try:
                 # Send a confirmation email with the activation link
@@ -248,10 +248,10 @@ class RequestPasswordResetView(APIView):
                 token = default_token_generator.make_token(user)
                 uid = urlsafe_base64_encode(force_bytes(user.pk))
 
-                # reset_link = f"http://localhost:5500/api/password_confirm/{uid}/{token}/"
+                reset_link = f"http://127.0.0.1:5500/pages/auth/confirm_password.html?uid={uid}&token={token}"
 
                 # Reset link pointing to the backend API for testing (no frontend yet)
-                reset_link = f'http://localhost:8000/api/password_confirm/{uid}/{token}/'
+                # reset_link = f'http://localhost:8000/api/password_confirm/{uid}/{token}/'
                 try:
                     send_reset_password_mail(user, reset_link)
                 except ValueError as error:
