@@ -71,6 +71,9 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': (
+        # Custom authentication class that reads JWT from HttpOnly cookies
+        'auth_app.api.authentication.CookieJWTAuthentication',
+        # Standard JWT authentication allows tools like Postman using Bearer tokens to authenticate
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     )
 }
