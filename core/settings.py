@@ -63,7 +63,7 @@ INSTALLED_APPS = [
     'django_rq',
     'corsheaders',
     'auth_app',
-    'video_app',
+    'video_app.apps.VideoAppConfig',
 ]
 
 REST_FRAMEWORK = {
