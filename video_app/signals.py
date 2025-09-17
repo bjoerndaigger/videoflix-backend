@@ -3,6 +3,7 @@ from django.dispatch import receiver
 from django.db.models.signals import post_save, post_delete
 import os
 from video_app.tasks import convert_480p
+import django_rq
 
 # @receiver decorator connects the video_post_save function to the post_save signal
 @receiver(post_save, sender=Video)
@@ -13,8 +14,10 @@ def video_post_save(sender, instance, created, **kwargs):
         # Runs only when a new video instance is created
         print('New video created')
 
-        # Converts the uploaded video to 480p
-        convert_480p(instance.video_file.path)
+        # Get the default RQ queue (autocommit=True ensures the job is added immediately)
+        queue = django_rq.get_queue('default', autocommit=True)
+        # Converts the uploaded video to 480p as a background job
+        queue.enqueue(convert_480p, instance.video_file.path)
 
 
 @receiver(post_delete, sender=Video)
