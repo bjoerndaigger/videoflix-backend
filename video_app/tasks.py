@@ -1,6 +1,18 @@
 import os
 import subprocess
 
+def convert_hls(source):
+     # Split the file path into base name and extension
+    base, ext = os.path.splitext(source)
+     # Create target file name
+    target = f"{base}.m3u8"
+    # FFmpeg command to convert video to hls
+    cmd = f'ffmpeg -i "{source}" -codec copy -start_number 0 -hls_time 10 -hls_list_size 0 -f hls "{target}"'
+
+    # Run the FFmpeg command
+    subprocess.run(cmd, shell=True)
+    
+
 def convert_480p(source):
      # Split the file path into base name and extension
     base, ext = os.path.splitext(source)

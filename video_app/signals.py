@@ -2,7 +2,8 @@ from video_app.models import Video
 from django.dispatch import receiver
 from django.db.models.signals import post_save, post_delete
 import os
-from video_app.tasks import convert_480p
+import glob 
+from video_app.tasks import convert_480p, convert_hls
 import django_rq
 
 # @receiver decorator connects the video_post_save function to the post_save signal
@@ -18,6 +19,8 @@ def video_post_save(sender, instance, created, **kwargs):
         queue = django_rq.get_queue('default', autocommit=True)
         # Converts the uploaded video to 480p as a background job
         queue.enqueue(convert_480p, instance.video_file.path)
+        # Converts the uploaded video to hls as a background job
+        queue.enqueue(convert_hls, instance.video_file.path)
 
 
 @receiver(post_delete, sender=Video)
@@ -27,6 +30,21 @@ def auto_delete_file_on_delete(sender, instance, **kwargs):
         if os.path.isfile(instance.video_file.path):
             os.remove(instance.video_file.path)
             print('Video deleted')
+        
+         # Delete the hls playlist if it exists
+        base, ext = os.path.splitext(instance.video_file.path)
+        path_hls = f"{base}.m3u8"
+        if os.path.isfile(path_hls):
+            os.remove(path_hls)
+            print('HLS-version deleted')
+        
+        # Delete all .ts segments
+        # glob is used to find all matching files by specific pattern in the same folder
+        ts_files = glob.glob(f"{base}*.ts")
+        for ts_file in ts_files:
+            os.remove(ts_file)
+
+
 
         # Delete the 480p version if it exists
         base, ext = os.path.splitext(instance.video_file.path)
