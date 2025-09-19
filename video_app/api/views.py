@@ -8,5 +8,3 @@ class VideoListView(ListAPIView):
     queryset = Video.objects.all()
 
     serializer_class = VideoSerializer
-    
-
