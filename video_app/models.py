@@ -3,10 +3,10 @@ from django.db import models
 
 class Video(models.Model):
     class Category(models.TextChoices):
-        ENTERTAINMENT = "ent", "Entertainment"
-        EDUCATION = "edu", "Education"
-        NATURE = "nat", "Nature"
-        OTHER = "oth", "Other"
+        ENTERTAINMENT = "entertainment", "Entertainment"
+        EDUCATION = "education", "Education"
+        NATURE = "nature", "Nature"
+        OTHER = "other", "Other"
 
     created_at = models.DateTimeField(auto_now_add=True)
     title = models.CharField(max_length=255, default="Untitled")

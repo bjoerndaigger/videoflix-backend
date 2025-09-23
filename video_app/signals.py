@@ -2,7 +2,7 @@ from video_app.models import Video
 from django.dispatch import receiver
 from django.db.models.signals import post_save, post_delete
 import os, glob, django_rq
-from video_app.tasks import convert_480p, convert_hls, create_thumbnail
+from video_app.tasks import convert_hls, create_thumbnail
 
 
 
@@ -17,10 +17,10 @@ def video_post_save(sender, instance, created, **kwargs):
 
         # Get the default RQ queue (autocommit=True ensures the job is added immediately)
         queue = django_rq.get_queue('default', autocommit=True)
-        # Converts the uploaded video to 480p as a background job
-        queue.enqueue(convert_480p, instance.video_file.path)
-        # Converts the uploaded video to hls as a background job
-        queue.enqueue(convert_hls, instance.video_file.path)
+        # Converts the uploaded video to hls as a background job in different resolutions
+        queue.enqueue(convert_hls, instance.video_file.path, instance.id, '480p')
+        queue.enqueue(convert_hls, instance.video_file.path, instance.id, '720p')
+        queue.enqueue(convert_hls, instance.video_file.path, instance.id, '1080p')
         # Create thumbnail
         queue.enqueue(create_thumbnail, instance.id)
 
@@ -45,13 +45,6 @@ def auto_delete_file_on_delete(sender, instance, **kwargs):
         ts_files = glob.glob(f"{base}*.ts")
         for ts_file in ts_files:
             os.remove(ts_file)
-
-        # Delete the 480p version if it exists
-        base, ext = os.path.splitext(instance.video_file.path)
-        path_480p = f"{base}_480{ext}"
-        if os.path.isfile(path_480p):
-            os.remove(path_480p)
-            print('480p-version deleted')
 
         # Delete thumbnail
         if os.path.isfile(instance.thumbnail_url.path):
