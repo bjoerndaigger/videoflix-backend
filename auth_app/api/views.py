@@ -1,3 +1,4 @@
+from auth_app.tasks import send_confirmation_mail, send_reset_password_mail
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from .serializers import RegisterSerializer, LoginSerializer, ResetPasswordRequestSerializer, PasswordConfirmSerializer
@@ -6,41 +7,49 @@ from rest_framework import status
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
-from django.core.mail import send_mail, BadHeaderError
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
+import django_rq
+
 
 User = get_user_model()
 
 
-def send_confirmation_mail(saved_account, activation_link):
-    subject = 'Confirm your email'
-    message = f'Hey {saved_account.username}, please activate your account here: {activation_link}'
-    from_email = settings.DEFAULT_FROM_EMAIL
-    recipient = saved_account.email
-
-    if subject and message and from_email:
-        try:
-            send_mail(
-                subject,
-                message,
-                from_email,
-                [recipient],
-            )
-        except BadHeaderError:
-            # Raise error here; view will handle the response
-            raise ValueError('Invalid header found.')
-    else:
-        raise ValueError('Make sure all fields are entered and valid.')
-
-
 class RegisterView(APIView):
+    """
+    A view for handling user registration.
+
+    This view allows new users to create an account. Anyone (including
+    unauthenticated users) can access this endpoint to register.
+    """
     permission_classes = [AllowAny]
 
     def post(self, request):
+        """
+        Handles POST requests to create a new user account.
+
+        Validates the submitted user data using the `RegisterSerializer`.
+        If the data is valid:
+        1. A new user is saved to the database (but marked as inactive).
+        2. A unique, time-sensitive activation token and a UID are generated.
+        3. An activation link is created.
+        4. A confirmation email is sent asynchronously via an RQ (Redis Queue)
+           to avoid blocking the application.
+        5. The new user's data is returned.
+
+        Args:
+            request (Request): The Django REST Framework request object, containing
+                               user data (e.g., email, password) in its body.
+
+        Returns:
+            Response: An HTTP response.
+                - On success (Status 201 CREATED): A JSON object with the user's
+                  data ('id', 'email') and the generated token.
+                - On failure (Status 400 BAD_REQUEST): A JSON object with the
+                  serializer's validation errors.
+        """
         serializer = RegisterSerializer(data=request.data)
 
         data = {}
@@ -56,14 +65,11 @@ class RegisterView(APIView):
 
             activation_link = f"http://localhost:5500/pages/auth/activate.html?uid={uid}&token={token}"
 
-            # Activation link pointing to the backend API for testing (no frontend yet)
-            # activation_link = f'http://localhost:8000/api/activate/{uid}/{token}/'
+            queue = django_rq.get_queue('default')
 
-            try:
-                # Send a confirmation email with the activation link
-                send_confirmation_mail(saved_account, activation_link)
-            except ValueError as error:
-                return Response({'error': str(error)}, status=status.HTTP_400_BAD_REQUEST)
+            # Send a confirmation email with the activation link
+            queue.enqueue(send_confirmation_mail,
+                          saved_account, activation_link)
 
             # Build the response data to return to the client
             data = {
@@ -215,30 +221,35 @@ class LogoutView(APIView):
             return Response({'error': str(error)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-def send_reset_password_mail(user, reset_link):
-    subject = 'Reset your password'
-    message = f'Hey {user.username}, please reset your password here: {reset_link}'
-    from_email = settings.DEFAULT_FROM_EMAIL
-    recipient = user.email
-
-    if subject and message and from_email:
-        try:
-            send_mail(
-                subject,
-                message,
-                from_email,
-                [recipient],
-            )
-        except BadHeaderError:
-            raise ValueError('Invalid header found.')
-    else:
-        raise ValueError('Make sure all fields are entered and valid.')
-
-
 class RequestPasswordResetView(APIView):
+    """
+    Handles the first step of the password reset process.
+
+    This view receives a POST request with an email address. If the email
+    corresponds to an existing user, it triggers an email to be sent with a
+    password reset link. For security, it always returns a success response,
+    regardless of whether the email exists in the database.
+    """
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
+        """
+        Initiates a password reset request for a user.
+
+        Validates the provided email. If a user with this email exists, a password
+        reset token and link are generated and sent to the user's email address
+        asynchronously.
+
+        To prevent user enumeration attacks (where an attacker could determine
+        if an email is registered), this endpoint will always return a successful
+        response, even if the email does not exist in the system.
+
+        Args:
+            request (Request): The request object containing the user's email.
+
+        Returns:
+            Response: An HTTP 200 OK response with a generic confirmation message.
+        """
         serializer = ResetPasswordRequestSerializer(data=request.data)
         if serializer.is_valid():
             email = serializer.validated_data['email']
@@ -250,12 +261,9 @@ class RequestPasswordResetView(APIView):
 
                 reset_link = f"http://127.0.0.1:5500/pages/auth/confirm_password.html?uid={uid}&token={token}"
 
-                # Reset link pointing to the backend API for testing (no frontend yet)
-                # reset_link = f'http://localhost:8000/api/password_confirm/{uid}/{token}/'
-                try:
-                    send_reset_password_mail(user, reset_link)
-                except ValueError as error:
-                    return Response({'error': str(error)}, status=status.HTTP_400_BAD_REQUEST)
+                queue = django_rq.get_queue('default')
+
+                queue.enqueue(send_reset_password_mail, user, reset_link)
 
             except User.DoesNotExist:
                 # Do nothing if the user doesn't exist to avoid revealing account info
