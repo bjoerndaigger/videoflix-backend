@@ -28,7 +28,6 @@ class RegisterTests(APITestCase):
         self.assertEqual(user.email, 'user@example.com')
         self.assertTrue(user.check_password('securepassword'))
 
-        # Checks if Account is inactive
         self.assertFalse(user.is_active)
 
 
@@ -93,7 +92,6 @@ class CookieRefreshTests(APITestCase):
     def test_cookie_refresh_invalid_token(self):
         # Set an invalid refresh token in the cookie so the view can read it
         self.client.cookies['refresh_token'] = 'this_is_an_invalid_token'
-        # Send POST request to the CookieRefreshView
         response = self.client.post(self.url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
@@ -120,23 +118,17 @@ class LogoutTests(APITestCase):
         # Set the refresh token in the cookie so the view can read it
         self.client.cookies['refresh_token'] = str(self.refresh)
 
-        # Send POST request to the logout view (no body needed)
         response = self.client.post(self.url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # Check that the response includes a cookie header
         self.assertIn('refresh_token', response.cookies)
-        # Retrieve the cookie from the response
         cookie = response.cookies['refresh_token']
-        # Check that the cookie value is cleared (set to an empty string)
         self.assertEqual(cookie.value, '')
         # Check that the cookie is marked for deletion ((max-age=0))
         self.assertEqual(cookie['max-age'], 0)
 
-        # Find the OutstandingToken for the refresh token
         outstanding_token = OutstandingToken.objects.get(
             token=str(self.refresh))
-        # Checks if the OutstandingToken exists in the blacklist
         self.assertTrue(BlacklistedToken.objects.filter(
             token=outstanding_token).exists())
 

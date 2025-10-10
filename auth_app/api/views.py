@@ -55,23 +55,14 @@ class RegisterView(APIView):
         data = {}
         if serializer.is_valid():
             saved_account = serializer.save()
-
-            # default_token_generator is an instance of PasswordResetTokenGenerator
-            # make_token() creates a secure, time-sensitive token for the user
-            # Token can later be verified with check_token()
             token = default_token_generator.make_token(saved_account)
-            # Encode the user's ID into a URL-safe string for the activation link
             uid = urlsafe_base64_encode(force_bytes(saved_account.pk))
 
             activation_link = f"http://localhost:5500/pages/auth/activate.html?uid={uid}&token={token}"
 
             queue = django_rq.get_queue('default')
+            queue.enqueue(send_confirmation_mail, saved_account, activation_link)
 
-            # Send a confirmation email with the activation link
-            queue.enqueue(send_confirmation_mail,
-                          saved_account, activation_link)
-
-            # Build the response data to return to the client
             data = {
                 'user': {
                     'id': saved_account.id,
@@ -86,19 +77,33 @@ class RegisterView(APIView):
 
 
 class ActivateAccountView(APIView):
+    """
+    Activates a newly registered user account via a token.
+
+    This view decodes the UID and checks the activation token. If valid,
+    the user's account is activated.
+    """
     permission_classes = [AllowAny]
 
     def get(self, request, uidb64, token):
+        """
+        Activate a user account.
+
+        Args:
+            request (Request): Incoming GET request.
+            uidb64 (str): URL-safe base64 encoded user ID.
+            token (str): Activation token generated at registration.
+
+        Returns:
+            Response: 200 OK if activation succeeds, 400 Bad Request if the link is invalid.
+        """
         try:
-            # Convert the user ID from the URL back to a string
             uid = force_str(urlsafe_base64_decode(uidb64))
             user = User.objects.get(pk=uid)
         except (TypeError, ValueError, User.DoesNotExist):
             raise ValidationError('Invalid or expired activation link.')
 
-        # Verify the token with check_token
         if user is not None and default_token_generator.check_token(user, token):
-            # Activate the user account
             user.is_active = True
             user.save()
             return Response({'message': 'Account successfully activated.'}, status=status.HTTP_200_OK)
@@ -107,13 +112,32 @@ class ActivateAccountView(APIView):
 
 
 class LoginView(TokenObtainPairView):
+    """
+    Handles user login and JWT token issuance.
+
+    Returns access and refresh tokens as HttpOnly cookies along with basic
+    user information.
+    """
     serializer_class = LoginSerializer
 
     def post(self, request, *args, **kwargs):
-        # Initialize the serializer with the incoming request data (email & password)
+        """
+        Authenticate user credentials and return JWT tokens.
+
+        Steps:
+            1. Validate login data via serializer.
+            2. Retrieve access and refresh tokens.
+            3. Set tokens as secure, HttpOnly cookies.
+            4. Return a success response with user info.
+
+        Args:
+            request (Request): POST request containing email and password.
+
+        Returns:
+            Response: 200 OK with user info and tokens, 401 Unauthorized on invalid credentials.
+        """
         serializer = self.get_serializer(data=request.data)
         try:
-            # Automatically returns errors if validation fails
             serializer.is_valid(raise_exception=True)
         except ValidationError:
             return Response(
@@ -121,7 +145,6 @@ class LoginView(TokenObtainPairView):
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
-        # Extract the JWT tokens from the validated data
         refresh = serializer.validated_data["refresh"]
         access = serializer.validated_data["access"]
 
@@ -134,7 +157,6 @@ class LoginView(TokenObtainPairView):
             },
         }, status=status.HTTP_200_OK)
 
-        # Set the access token as an HttpOnly cookie
         response.set_cookie(
             key='access_token',
             value=access,
@@ -143,7 +165,6 @@ class LoginView(TokenObtainPairView):
             samesite='Lax'
         )
 
-        # Set the refresh token as an HttpOnly cookie
         response.set_cookie(
             key='refresh_token',
             value=refresh,
@@ -156,32 +177,34 @@ class LoginView(TokenObtainPairView):
 
 
 class CookieRefreshView(TokenRefreshView):
+    """
+    Refreshes JWT access tokens using the refresh token stored in HttpOnly cookies.
+    """
     def post(self, request, *args, **kwargs):
-        refresh_token = request.COOKIES.get('refresh_token')
+        """
+        Retrieve a new access token using a valid refresh token from cookies.
 
+        Args:
+            request (Request): HTTP request containing the refresh token cookie.
+
+        Returns:
+            Response: 200 OK with new access token, 400/401 on errors.
+        """
+        refresh_token = request.COOKIES.get('refresh_token')
         if refresh_token is None:
             return Response({'detail': 'Refresh token not found'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create a serializer instance with the refresh token
-        # Standard serializer from TokenRefreshView (TokenRefreshSerializer from SimpleJWT)
         serializer = self.get_serializer(data={'refresh': refresh_token})
-
-        # Validate the token – stops the function if the token is invalid or expired
         try:
             serializer.is_valid(raise_exception=True)
         except Exception:
             return Response({'detail': 'Refresh token invalid'}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # Get a new access token
         new_access_token = serializer.validated_data.get('access')
-
-        # Erstelle eine neue Response
         response = Response({
             'detail': 'Token refreshed',
             'access': new_access_token
         }, status=status.HTTP_200_OK)
-
-        # Set the new access token as an HttpOnly cookie
         response.set_cookie(
             key='access_token',
             value=new_access_token,
@@ -194,26 +217,35 @@ class CookieRefreshView(TokenRefreshView):
 
 
 class LogoutView(APIView):
+    """
+    Handles user logout by blacklisting the refresh token and deleting cookies.
+    """
     permission_classes = [AllowAny]
 
     def post(self, request):
-        # Retrieve the refresh token from the HttpOnly cookie
+        """
+        Log out a user.
+
+        Steps:
+            1. Retrieve the refresh token from cookies.
+            2. Blacklist it so it cannot be reused.
+            3. Delete access and refresh token cookies.
+            4. Return a success response.
+
+        Returns:
+            Response: 200 OK on success, 400 Bad Request if no token found.
+        """
         refresh_token = request.COOKIES.get('refresh_token')
 
         if not refresh_token:
             return Response(
                 {'error': 'No refresh token found in cookies. User may already be logged out.'}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            # Create a RefreshToken object from the token string
             token = RefreshToken(refresh_token)
-
-            # Blacklist the refresh token so it cannot be used again
             token.blacklist()
 
             response = Response(
                 {'detail': 'Logout successful! All tokens will be deleted. Refresh token is now invalid.'}, status=status.HTTP_200_OK)
-
-            # Delete the access and refresh token cookies to remove them from the client
             response.delete_cookie('access_token')
             response.delete_cookie('refresh_token')
             return response
@@ -258,27 +290,34 @@ class RequestPasswordResetView(APIView):
                 user = User.objects.get(email=email)
                 token = default_token_generator.make_token(user)
                 uid = urlsafe_base64_encode(force_bytes(user.pk))
-
                 reset_link = f"http://127.0.0.1:5500/pages/auth/confirm_password.html?uid={uid}&token={token}"
-
                 queue = django_rq.get_queue('default')
-
                 queue.enqueue(send_reset_password_mail, user, reset_link)
-
             except User.DoesNotExist:
-                # Do nothing if the user doesn't exist to avoid revealing account info
                 pass
-
-            # Always return 200 OK for security reasons
             return Response(
                 {'detail': 'An email has been sent to reset your password.'}, status=status.HTTP_200_OK
             )
 
 
 class PasswordConfirmView(APIView):
+    """
+    Confirms a password reset using a token and sets the new password.
+    """
     permission_classes = [AllowAny]
 
     def post(self, request, uidb64, token):
+        """
+        Set a new password for a user after verifying the token.
+
+        Args:
+            request (Request): Contains the new password.
+            uidb64 (str): Base64 encoded user ID.
+            token (str): Password reset token.
+
+        Returns:
+            Response: 200 OK if successful, 400 Bad Request if the token/link is invalid.
+        """
         try:
             uid = force_str(urlsafe_base64_decode(uidb64))
             user = User.objects.get(pk=uid)
@@ -295,12 +334,3 @@ class PasswordConfirmView(APIView):
             return Response({'detail': 'Your Password has been successfully reset.'}, status=status.HTTP_200_OK)
         else:
             return Response({'error': 'Invalid or expired link.'}, status=status.HTTP_400_BAD_REQUEST)
-
-
-# Protected test endpoint to verify JWT authentication
-class TestProtectedView(APIView):
-    def get(self, request):
-        return Response({
-            'detail': 'Access granted',
-            'user': request.user.email
-        })
