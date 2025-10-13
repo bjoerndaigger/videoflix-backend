@@ -39,7 +39,8 @@ CSRF_TRUSTED_ORIGINS = os.environ.get(
 
 # CORS
 CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "")
-CORS_ALLOWED_ORIGINS = [origin.strip() for origin in CORS_ALLOWED_ORIGINS.split(",") if origin]
+CORS_ALLOWED_ORIGINS = [origin.strip()
+                        for origin in CORS_ALLOWED_ORIGINS.split(",") if origin]
 
 
 # Allow cookies to be sent with cross-origin requests
@@ -198,10 +199,6 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Email backend configuration
-# For development/testing only: print emails to console instead of sending
-# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-
-# --- SMTP settings temporarily disabled for console testing ---
 # Using SMTP for sending emails, settings are read from .env
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = os.environ.get("EMAIL_HOST")

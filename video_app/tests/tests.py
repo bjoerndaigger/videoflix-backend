@@ -26,7 +26,6 @@ class VideoViewTests(APITestCase):
             "thumbnail.jpg", b"file_content", content_type="image/jpeg"
         )
 
-        # Create a video in the database
         self.video = Video.objects.create(
             title="Test Video",
             description="Test description",
@@ -36,7 +35,6 @@ class VideoViewTests(APITestCase):
         )
 
     def test_videolist(self):
-        # Authenticate user
         data = {
             "email": "user@example.com",
             "password": "securepassword"
@@ -45,7 +43,6 @@ class VideoViewTests(APITestCase):
         response = self.client.post(self.login_url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # Checks if the API returns a video with correct data 
         response = self.client.get(self.videos_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
@@ -53,8 +50,5 @@ class VideoViewTests(APITestCase):
         self.assertEqual(video_data['title'], 'Test Video')
         self.assertEqual(video_data['description'], 'Test description')
         self.assertEqual(video_data['category'], Video.Category.EDUCATION)
-        self.assertIn('created_at', video_data)  
-        self.assertIn('thumbnail_url', video_data)  
-
-     
-    
+        self.assertIn('created_at', video_data)
+        self.assertIn('thumbnail_url', video_data)

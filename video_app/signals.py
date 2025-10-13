@@ -25,18 +25,14 @@ def video_post_save(sender, instance, created, **kwargs):
         **kwargs: Wildcard keyword arguments.
     """
     if created:
-        # Get the default RQ queue
         queue = django_rq.get_queue('default', autocommit=True)
 
-        # Enqueue tasks to convert the video to HLS format in multiple resolutions
         queue.enqueue(convert_hls, instance.video_file.path,
                       instance.id, '480p')
         queue.enqueue(convert_hls, instance.video_file.path,
                       instance.id, '720p')
         queue.enqueue(convert_hls, instance.video_file.path,
                       instance.id, '1080p')
-
-        # Enqueue a task to create a thumbnail for the video
         queue.enqueue(create_thumbnail, instance.id)
 
 
@@ -54,18 +50,13 @@ def auto_delete_file_on_delete(sender, instance, **kwargs):
         instance (Video): The instance that was deleted.
         **kwargs: Wildcard keyword arguments.
     """
-    # Delete the original video file if it exists
     if instance.video_file:
         instance.video_file.delete(save=False)
 
-    # Delete the thumbnail file if it exists
     if instance.thumbnail_url:
         instance.thumbnail_url.delete(save=False)
 
-    # Construct the path to the directory containing HLS files
     hls_directory = os.path.join(
         settings.MEDIA_ROOT, 'video', str(instance.id))
-
-    # If the directory exists, remove it and all its contents
     if os.path.isdir(hls_directory):
         shutil.rmtree(hls_directory)
