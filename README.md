@@ -1,6 +1,6 @@
 # Project Setup
 
-This project is a Django-based application with Docker support. Follow the instructions below to set up the project locally.
+This project is a Django-based application with Docker support. Follow the instructions below to set up the project locally. Note: FFmpeg should be installed for video processing (HLS).
 
 ## 1. Clone the Repository
 
